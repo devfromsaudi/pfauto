@@ -1,8 +1,15 @@
 const pty = require('node-pty');
+const fs = require('fs');
 
 function startBot() {
   let transactionSuccessful = false;
   let stage = 0;
+  let addresses = fs.readFileSync('kingofthehill.txt', 'utf8').split('\n').filter(Boolean);
+  let stage0Inputs = ['2', '1', 'n', '1', '12', '3'];
+  let stage1Inputs = ['5', '10', '3', '11'];
+  let currentStage0Input = 0;
+  let currentStage1Input = 0;
+  let waitingForTimeout = false;
 
   function runBot() {
     const botProcess = pty.spawn('npm', ['run', 'start'], {
@@ -15,8 +22,6 @@ function startBot() {
 
     let buffer = '';
     let inputSent = false;
-    const inputSequence = stage === 0 ? ['2', '1', 'n', '1', '12'] : ['5'];
-    let currentInputIndex = 0;
 
     botProcess.on('data', (data) => {
       process.stdout.write(data);
@@ -26,25 +31,50 @@ function startBot() {
         transactionSuccessful = true;
       }
 
-      if (!inputSent) {
+      if (!inputSent && !waitingForTimeout) {
         if (buffer.includes('Choose an option (1-8):')) {
           if (stage === 0) {
-            if (currentInputIndex === 0) {
-              sendInput('2');
-            } else if (currentInputIndex === 5) {
-              sendInput('3');
-            }
+            sendInput(stage0Inputs[currentStage0Input]);
+            currentStage0Input++;
           } else if (stage === 1) {
-            sendInput('5');
+            sendInput(stage1Inputs[currentStage1Input]);
+            currentStage1Input++;
           }
         } else if (buffer.includes('Choose an option (1-12):') && stage === 0) {
-          if (currentInputIndex === 1 || currentInputIndex === 4) {
-            sendInput(inputSequence[currentInputIndex]);
-          }
+          sendInput(stage0Inputs[currentStage0Input]);
+          currentStage0Input++;
         } else if (buffer.includes('Do you wish to send unique amounts to each wallet?') && stage === 0) {
-          sendInput(inputSequence[currentInputIndex]);
+          sendInput(stage0Inputs[currentStage0Input]);
+          currentStage0Input++;
         } else if (buffer.includes('Enter funding amount (SOL) for all wallets:') && stage === 0) {
-          sendInput(inputSequence[currentInputIndex]);
+          sendInput(stage0Inputs[currentStage0Input]);
+          currentStage0Input++;
+        } else if (buffer.includes('Choose an option (1-11):') && stage === 1) {
+          if (currentStage1Input < stage1Inputs.length) {
+            sendInput(stage1Inputs[currentStage1Input]);
+            currentStage1Input++;
+            
+            if (currentStage1Input === stage1Inputs.length) {
+              waitingForTimeout = true;
+              setTimeout(() => {
+                waitingForTimeout = false;
+                sendInput('6');
+                setTimeout(() => {
+                  sendInput('6');
+                }, 3000);
+              }, 120000);
+            }
+          }
+        } else if (buffer.includes('Enter Token Mint:') && stage === 1) {
+          if (addresses.length > 0) {
+            const address = addresses.shift();
+            sendInput(address);
+            fs.writeFileSync('kingofthehill.txt', addresses.join('\n'));
+          } else {
+            console.log('No more addresses available');
+            botProcess.kill();
+            process.exit();
+          }
         }
       }
     });
@@ -57,7 +87,6 @@ function startBot() {
           botProcess.write('\r');
           buffer = '';
           inputSent = false;
-          currentInputIndex++;
         }, 3000);
       }, 3000);
     }
