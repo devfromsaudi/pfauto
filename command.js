@@ -2,12 +2,18 @@ const pty = require('node-pty');
 const fs = require('fs');
 const axios = require('axios');
 const { Connection, PublicKey } = require('@solana/web3.js');
-require('dotenv').config();
+const dotenv = require('dotenv');
+
+// Read .env.bot file
+const envConfig = dotenv.parse(fs.readFileSync('.env.bot'));
+for (const k in envConfig) {
+  process.env[k] = envConfig[k];
+}
 
 const stages = [
   { name: 'fundWallets', inputs: ['2', '1', 'n', '0.3'] },
   { name: 'createLookupTable', inputs: ['3'] },
-  { name: 'launch', inputs: ['5', '7', '', '5', '3'] },
+  { name: 'launch', inputs: ['5', '7', '', '5', '2'] },
   { name: 'sell', inputs: ['6', '1', '2', '4'] }
 ];
 
@@ -22,15 +28,28 @@ function log(message) {
 }
 
 async function sendTelegramMessage(message) {
+  console.log('📤 Sending Telegram message...');
+  console.log('BOT_TOKEN:', process.env.BOT_TOKEN);
+  console.log('CHANNEL_ID:', process.env.CHANNEL_ID);
   try {
     const url = `https://api.telegram.org/bot${process.env.BOT_TOKEN}/sendMessage`;
-    await axios.post(url, {
+    console.log('Request URL:', url);
+    const response = await axios.post(url, {
       chat_id: process.env.CHANNEL_ID,
       text: message
     });
+    console.log('✅ Telegram message sent successfully');
+    console.log('Response:', response.data);
     log('Telegram message sent successfully');
   } catch (error) {
+    console.error(`❌ Error sending Telegram message: ${error.message}`);
+    if (error.response) {
+      console.error('Error response:', error.response.data);
+    }
     log(`Error sending Telegram message: ${error.message}`);
+    if (error.response) {
+      log(`Error response: ${JSON.stringify(error.response.data)}`);
+    }
   }
 }
 
@@ -95,7 +114,7 @@ function startBot() {
                      stages[currentStage].name === 'createLookupTable') {
             setTimeout(() => {
               botProcess.kill();
-            }, 20000); // Changed to 20 seconds
+            }, 10000); // Changed to 10 seconds
           } else if (stages[currentStage].name === 'launch' && currentInput === stages[currentStage].inputs.length) {
             setTimeout(() => {
               botProcess.kill();
@@ -127,12 +146,11 @@ function startBot() {
       try {
         const contracts = fs.readFileSync('contracts.txt', 'utf8').split('\n').filter(Boolean);
         if (contracts.length > 0) {
-          const token = contracts.shift();
-          fs.writeFileSync('contracts.txt', contracts.join('\n'));
-          return token;
+          const randomIndex = Math.floor(Math.random() * contracts.length);
+          return contracts[randomIndex];
         }
       } catch (error) {
-        return '';
+        log(`Error reading contracts file: ${error.message}`);
       }
       return '';
     }
@@ -151,7 +169,7 @@ function startBot() {
       } else {
         tokenMint = getMostRecentTokenMint();
         const devWalletBalance = await getDevWalletBalance();
-        const message = `🚀 Launched: pump.fun/${tokenMint}\n\n😈 Dev Wallet Balance: ${devWalletBalance} SOL`;
+        const message = `🚀 Launched: https://pump.fun/${tokenMint}\n\n😈 Dev Wallet Balance: ${devWalletBalance} SOL`;
         log('Waiting 10 seconds before sending Telegram message...');
         setTimeout(async () => {
           await sendTelegramMessage(message);
